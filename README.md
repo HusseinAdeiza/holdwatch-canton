@@ -63,21 +63,34 @@ correctly against a design mistake**, not a bug to route around:
 So the holder-settles path needs a genuine two-party create. The official route is
 the JSON Ledger API, which is what the Daml Script harness cannot express.
 
-## Blocked on: the HTTP JSON Ledger API
+## Blocked on: the JSON Ledger API endpoints
 
-Not running yet. What was tried, so it isn't retried blindly:
+`json-api` **binds and responds** — `/livez` returns 200 — but in SDK 2.10.6 it
+exposes **none** of the documented `/v2/*` endpoints:
 
-| Attempt | Result |
-|---|---|
-| `daml sandbox --json-api-port 7575` | flag does not exist in 2.10.6 |
-| `sandbox.json` with `httpPort` | key silently ignored |
-| participant conf with `ledger-api.http` | gRPC bound on 6865, HTTP never bound |
-| HOCON `canton { }` wrapper in the conf | `CANNOT_PARSE_CONFIG_FILES` — the conf body must not be wrapped |
-| `daml-sdk.jar json-api --port 7575` | needs `java -jar`, and the flag is `--http-port` |
-| `java -jar ... json-api --http-port 7575 --ledger-port 6865` | **process runs, port never binds** — current blocker |
+```
+POST /livez                     -> 200
+POST /v2/parties                 -> 404
+POST /v2/state/ledger-end        -> 404
+POST /v2/state/active-contracts  -> 404
+GET  /docs/openapi               -> 404
+```
 
-Next step is to read the `json-api --help` output rather than guess flags again,
-then verify with `/livez` before running `two_party_create.py`.
+So the API process runs and the health check passes, while every real endpoint
+404s. That is why `two_party_create.py` allocates no parties: it is calling the
+documented API, which this build does not implement. The script is written and
+correct against the documented v2 shape; it will run against a build that serves
+it.
+
+**Likely cause:** the documented CLI is `dpm sandbox --json-api-port 7575`, and
+`dpm` is not installed here — only `daml`. The `daml sandbox` path serves gRPC on
+6865 with no HTTP gateway, and the standalone `json-api` jar in 2.10.6 exposes
+only the liveness endpoint. This needs either the Canton release's own scripts
+(or `dpm`) rather than the Daml SDK alone.
+
+**Not a dead end for the season:** Canton workshops and masterclasses run during
+Phase 2 precisely because this setup step needs doing properly, and the DevNet
+path avoids local sandbox transport entirely.
 
 ## Daml syntax notes (cost several compiles — read these first)
 
