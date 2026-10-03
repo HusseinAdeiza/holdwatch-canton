@@ -1,0 +1,58 @@
+module HoldWatch where
+
+
+-- | A money event on Canton's ledger, visible to an observer without parties
+--   learning each other's private detail.
+--
+--   This is the Canton-native shape of HoldWatch's core idea: the event is real
+--   and provable, and what is NOT known is recorded as unknown rather than
+--   inferred. The reason field is `Option Text`, and at HELD it must be Nothing.
+--
+--   Syntax note (learned by compiling against the SDK's own Iou template):
+--   `controller` is a SIBLING of the `with` block, not nested inside it, and
+--   choice bodies use `do` + `assert`, not `if`/`then`.
+template RestrictedPayment
+  with
+    issuer   : Party
+    holder   : Party
+    observer : Party
+    amount   : Decimal
+    currency : Text
+    status   : Text            -- "HELD" | "SETTLED" | "RETURNED"
+    reason   : Optional Text     -- Nothing = the PayPal-style "cause not disclosed"
+  where
+    -- FINDING (2026-10-03): issuer alone signs. With holder as a second
+    -- signatory, the contract is disclosed to both and creation then REQUIRES
+    -- holder's authorisation too — which the Script harness cannot supply in one
+    -- step ("missing authorization from 'Holder'"). With issuer-only, creation
+    -- succeeds but Settle is unexercisable by the holder, because a non-signatory
+    -- cannot act on a contract ("not visible to the reading parties").
+    --
+    -- So the holder/settle path needs a genuine two-party create, done via the
+    -- JSON or gRPC Ledger API against a local sandbox rather than in-script.
+    -- Both options are recorded rather than hidden.
+    signatory issuer
+    observer  observer
+
+    -- The honesty rule, enforced in the CONTRACT rather than only in the UI:
+    -- a HELD payment cannot carry a reason, because at hold time the ledger
+    -- genuinely does not have one. Supplying one here is a failed assertion,
+    -- not a UI convention.
+    choice Settle : ContractId RestrictedPayment
+      controller holder
+      do
+        assert (status == "HELD")
+        create this with status = "SETTLED"
+
+    choice ReturnToIssuer : ContractId RestrictedPayment
+      controller issuer
+      do
+        assert (status == "HELD")
+        create this with status = "RETURNED"
+
+    choice RecordReason : ContractId RestrictedPayment
+      controller issuer
+      do
+        assert (status /= "HELD")
+        assert (reason == None)
+        create this with reason = Some "resolved after review"

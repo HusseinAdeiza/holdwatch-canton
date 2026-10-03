@@ -1,0 +1,33 @@
+{-# LANGUAGE ApplicativeDo #-}
+
+module Setup where
+
+import Daml.Script
+
+import HoldWatch
+
+-- | Demo scenario: a USD 4,200 payment created HELD with NO disclosed reason —
+--   the Canton-native shape of the PayPal case that started this project.
+--
+--   Asserts on the HELD creation, which is the beat the demo shows: the ledger
+--   records the event, the amount, and — critically — that NO reason exists.
+holdwatch_test : Script RestrictedPayment = do
+  issuer   <- allocateParty "Issuer"
+  holder   <- allocateParty "Holder"
+  observer <- allocateParty "Observer"
+
+  cid <- issuer `submit` createCmd RestrictedPayment
+    with
+      issuer
+      holder
+      observer
+      amount = 4200.00
+      currency = "USD"
+      status = "HELD"
+      -- None, not a guess: at HELD time the ledger genuinely has no reason.
+      reason = None
+
+  mHeld <- queryContractId observer cid
+  case mHeld of
+    Some held -> pure held
+    None      -> abort "held payment not visible to the observer"

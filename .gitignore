@@ -1,0 +1,6 @@
+.daml/
+target/
+sandbox.log
+*.dar
+log/
+sandbox.json
